@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta http-equiv="content-type" content="text/html; charset=UTF-8">
+        <script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+        <meta charset="utf-8">
+        <style>
+            #root
+            {
+                margin:20px;
+            }
+            .chess table.chess
+            {
+                border:5px black solid;
+                padding:0;
+                margin:0;
+                border-spacing: 0;
+            }
+            .chess tr
+            {
+                padding:0;
+                margin:0;
+                border-width:0;
+            }
+            .chess th
+            {
+                width:50px;
+                height:50px;
+                padding:0;
+                margin:0;
+                font-size:1.8em;
+            }
+
+            .chess tr:nth-child(odd) th:nth-child(even)
+            {
+                background-color:black;
+            }
+
+            .chess tr:nth-child(even) th:nth-child(odd)
+            {
+                background-color:black;
+            }
+
+            .chess th:hover
+            {
+                font-size:2em;
+                cursor:help;
+                background-color:#BBB;
+            }
+
+            .chess tr:nth-child(odd) th:nth-child(even):hover
+            {
+                background-color:#333;
+            }
+
+            .chess tr:nth-child(even) th:nth-child(odd):hover
+            {
+                background-color:#333;
+            }
+
+            .chess h1
+            {
+                font-family:sans-serif;
+            }
+            
+            #chess
+            {
+                text-shadow: 1px 0 #fff, -1px 0 #fff, 0 1px #fff, 0 -1px #fff;
+                user-select: none;
+            }
+            
+            #chess .selected
+            {
+                text-shadow: 1px 0 #F00, -1px 0 #F00, 0 1px #F00, 0 -1px #F00;
+                font-size:2.3em;
+            }
+            
+            .restart
+            {
+                font-size:2em;
+                font-family:Arial;
+                margin:20px;
+                padding:10px;
+                border:5px #555 solid;
+                border-radius:20px;
+                width: 150px;
+                text-align: center;
+            }
+            
+            .restart:hover
+            {
+                cursor:pointer;
+                user-select: none;
+            }
+            
+        </style>
+
+        <script>
+            // Формируем JSON с SQL-командой
+            const body = {
+              "transaction": [
+              {
+                "query": "SELECT * FROM TEST_TABLE ORDER BY ID ASC"
+              },
+             ]
+            };
+
+            // Делаем запрос
+            var xhr = new XMLHttpRequest();
+            var url = "https://v1289560.hosted-by-vdsina.ru/testDb";
+            xhr.open("POST", url, true);
+            xhr.setRequestHeader("Content-Type", "application/json");
+            // Указываем функцию, которая будет вызвана, когда будет получен ответ
+            xhr.onreadystatechange = printResponse;
+
+            xhr.send(JSON.stringify(body));
+            console.log("BBB");
+
+            // Эта функция автоматически вызовется, когда получим ответ
+            function printResponse() {
+              if (xhr.readyState === 4 && xhr.status === 200) {
+              var json = JSON.parse(xhr.responseText);
+                console.log("AAA");
+            }
+        }
+        </script>
+    </head>
+    <body>
+        <div class="chess" id="chess"></div>
+        <div class="restart" id="buttonRestart">ЗАНОВО</div>
+    </body>
+    <script>
+        createDesk();
+        //putChar(2, 1, "♙", 0);
+        restart(null);
+    </script>
+
+</html>
