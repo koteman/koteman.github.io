@@ -29,6 +29,10 @@
         overflow: hidden;
         position: relative;
         box-shadow: 0 0 40px rgba(80, 40, 160, 0.15);
+        cursor: grab;
+    }
+    .viewport.dragging {
+        cursor: grabbing;
     }
 
     #canvas-container { width: 100%; height: 100%; }
@@ -74,7 +78,7 @@
 </head>
 <body>
 
-    <div class="viewport">
+    <div class="viewport" id="viewport">
         <div id="canvas-container"></div>
         <div class="loader" id="loader">ЗАГРУЗКА...</div>
     </div>
@@ -94,6 +98,7 @@
 
         const container = document.getElementById('canvas-container');
         const loaderEl = document.getElementById('loader');
+        const viewport = document.getElementById('viewport');
 
         // Сцена
         const scene = new THREE.Scene();
@@ -118,14 +123,12 @@
         const geometry = new THREE.SphereGeometry(1.3, 96, 96);
         const material = new THREE.MeshBasicMaterial({ color: 0xffffff });
         const earth = new THREE.Mesh(geometry, material);
-        earth.rotation.z = 0 * Math.PI / 180;
         scene.add(earth);
 
         // ================== Загрузка текстуры с фолбэками ==================
         const textureLoader = new THREE.TextureLoader();
         textureLoader.setCrossOrigin('anonymous');
 
-        // Несколько зеркал одной и той же текстуры
         const textureUrls = [
             'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r160/examples/textures/planets/earth_atmos_2048.jpg',
             'https://threejs.org/examples/textures/planets/earth_atmos_2048.jpg',
@@ -139,45 +142,141 @@
                 loaderEl.textContent = 'НЕ УДАЛОСЬ ЗАГРУЗИТЬ ТЕКСТУРУ';
                 return;
             }
-
             const url = textureUrls[urlIndex];
-            console.log('Пробуем загрузить:', url);
-
             textureLoader.load(
                 url,
-                // onLoad
                 (texture) => {
                     texture.colorSpace = THREE.SRGBColorSpace;
                     texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
                     material.map = texture;
                     material.needsUpdate = true;
                     loaderEl.classList.add('hidden');
-                    console.log('Текстура загружена:', url);
                 },
-                // onProgress
                 undefined,
-                // onError
-                (err) => {
-                    console.warn('Не удалось загрузить', url, err);
+                () => {
                     urlIndex++;
                     tryLoadTexture();
                 }
             );
         }
-
         tryLoadTexture();
 
-        // Анимация вращения
+        // ================== Управление мышью ==================
+        // Наклон оси оставим отдельным объектом, чтобы вращение мыши
+        // работало «поверх» природного наклона Земли.
+        const tiltGroup = new THREE.Group();
+        tiltGroup.rotation.z = -23.4 * Math.PI / 180;
+        tiltGroup.add(earth);
+        scene.add(tiltGroup);
+
+        // Переменные состояния вращения
+        let isDragging = false;
+        let previousX = 0;
+        let previousY = 0;
+
+        // Текущие углы поворота группы
+        let rotY = 0;
+        let rotX = 0;
+
+        // Скорости (для инерции)
+        let velY = 0;
+        let velX = 0;
+
+        // Автовращение — выключаем, пока пользователь крутит
+        const AUTO_ROTATION_SPEED = 0.15;
+
+        // Мягкое ограничение по вертикали (чтобы не переворачивалась)
+        const MAX_X = Math.PI / 2.2;
+
+        // Чувствительность
+        const SENSITIVITY = 0.006;
+
+        function onPointerDown(e) {
+            // Только левая кнопка мыши
+            if (e.button !== 0) return;
+
+            isDragging = true;
+            viewport.classList.add('dragging');
+            previousX = e.clientX;
+            previousY = e.clientY;
+            velX = 0;
+            velY = 0;
+
+            viewport.setPointerCapture(e.pointerId);
+        }
+
+        function onPointerMove(e) {
+            if (!isDragging) return;
+
+            const dx = e.clientX - previousX;
+            const dy = e.clientY - previousY;
+            previousX = e.clientX;
+            previousY = e.clientY;
+
+            // Обновляем углы
+            rotY += dx * SENSITIVITY;
+            rotX += dy * SENSITIVITY;
+
+            // Ограничиваем вертикальный поворот
+            rotX = Math.max(-MAX_X, Math.min(MAX_X, rotX));
+
+            // Запоминаем скорость для инерции
+            velY = dx * SENSITIVITY;
+            velX = dy * SENSITIVITY;
+        }
+
+        function onPointerUp(e) {
+            if (e.button !== 0 && e.type === 'pointerup') {
+                // для pointerup любая кнопка — ок
+            }
+            isDragging = false;
+            viewport.classList.remove('dragging');
+        }
+
+        viewport.addEventListener('pointerdown', onPointerDown);
+        viewport.addEventListener('pointermove', onPointerMove);
+        viewport.addEventListener('pointerup', onPointerUp);
+        viewport.addEventListener('pointercancel', onPointerUp);
+        viewport.addEventListener('pointerleave', onPointerUp);
+
+        // Отключаем выделение текста при перетаскивании
+        viewport.addEventListener('dragstart', (e) => e.preventDefault());
+
+        // ================== Анимация ==================
         const clock = new THREE.Clock();
+
         function animate() {
             requestAnimationFrame(animate);
+            const dt = clock.getDelta();
             const t = clock.getElapsedTime();
-            earth.rotation.y = t * 0.15;
+
+            // Автовращение по умолчанию (когда пользователь не трогает)
+            if (!isDragging) {
+                rotY += AUTO_ROTATION_SPEED * dt;
+
+                // Инерция
+                if (Math.abs(velY) > 0.0001 || Math.abs(velX) > 0.0001) {
+                    rotY += velY;
+                    rotX += velX;
+                    rotX = Math.max(-MAX_X, Math.min(MAX_X, rotX));
+
+                    // Затухание
+                    velY *= 0.94;
+                    velX *= 0.94;
+                }
+            }
+
+            // Применяем поворот к группе с наклоном
+            tiltGroup.rotation.y = rotY;
+            tiltGroup.rotation.x = rotX;
+            // Наклон оси сохраняем
+            tiltGroup.rotation.z = -23.4 * Math.PI / 180;
+
             renderer.render(scene, camera);
         }
         animate();
 
-        // Ресайз
+        // ================== Ресайз ==================
         window.addEventListener('resize', () => {
             const w = container.clientWidth;
             const h = container.clientHeight;
