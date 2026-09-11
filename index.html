@@ -3,17 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>3D Визуализация</title>
+<title>3D Земля</title>
 <style>
-    * {
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-    }
-
-    html, body {
-        height: 100%;
-    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { height: 100%; }
 
     body {
         background: #12102a;
@@ -26,12 +19,11 @@
         padding: 40px;
     }
 
-    /* Центральное тёмное окно */
     .viewport {
         width: 100%;
         max-width: 1000px;
         aspect-ratio: 16 / 9;
-        background: #000000;
+        background: #000;
         border: 1px solid #3d2a6b;
         border-radius: 8px;
         overflow: hidden;
@@ -39,12 +31,23 @@
         box-shadow: 0 0 40px rgba(80, 40, 160, 0.15);
     }
 
-    #canvas-container {
-        width: 100%;
-        height: 100%;
-    }
+    #canvas-container { width: 100%; height: 100%; }
 
-    /* Кнопка */
+    .loader {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        color: #8a5cff;
+        font-size: 14px;
+        letter-spacing: 3px;
+        transition: opacity 0.5s ease;
+        pointer-events: none;
+        z-index: 2;
+    }
+    .loader.hidden { opacity: 0; }
+
     .load-btn {
         padding: 18px 48px;
         font-size: 20px;
@@ -57,27 +60,15 @@
         box-shadow: 0 4px 0 #b8b8b8;
         transition: transform 0.1s ease, box-shadow 0.1s ease;
     }
-
-    .load-btn:hover {
-        background: #f5f5f5;
-    }
-
+    .load-btn:hover { background: #f5f5f5; }
     .load-btn:active {
         transform: translateY(3px);
         box-shadow: 0 1px 0 #b8b8b8;
     }
 
-    /* Адаптивность */
     @media (max-width: 768px) {
-        body {
-            gap: 40px;
-            padding: 20px;
-        }
-
-        .load-btn {
-            padding: 14px 32px;
-            font-size: 16px;
-        }
+        body { gap: 40px; padding: 20px; }
+        .load-btn { padding: 14px 32px; font-size: 16px; }
     }
 </style>
 </head>
@@ -85,6 +76,7 @@
 
     <div class="viewport">
         <div id="canvas-container"></div>
+        <div class="loader" id="loader">ЗАГРУЗКА...</div>
     </div>
 
     <button class="load-btn">Загрузить данные</button>
@@ -92,7 +84,7 @@
     <script type="importmap">
     {
         "imports": {
-            "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"
         }
     }
     </script>
@@ -101,6 +93,7 @@
         import * as THREE from 'three';
 
         const container = document.getElementById('canvas-container');
+        const loaderEl = document.getElementById('loader');
 
         // Сцена
         const scene = new THREE.Scene();
@@ -118,56 +111,68 @@
         // Рендерер
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(container.clientWidth, container.clientHeight);
-        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         container.appendChild(renderer.domElement);
 
-        // Освещение
-        scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+        // Сфера — MeshBasicMaterial (не зависит от света)
+        const geometry = new THREE.SphereGeometry(1.3, 96, 96);
+        const material = new THREE.MeshBasicMaterial({ color: 0xffffff });
+        const earth = new THREE.Mesh(geometry, material);
+        earth.rotation.z = 0 * Math.PI / 180;
+        scene.add(earth);
 
-        const light1 = new THREE.DirectionalLight(0x8a5cff, 2.5);
-        light1.position.set(5, 5, 5);
-        scene.add(light1);
+        // ================== Загрузка текстуры с фолбэками ==================
+        const textureLoader = new THREE.TextureLoader();
+        textureLoader.setCrossOrigin('anonymous');
 
-        const light2 = new THREE.DirectionalLight(0xff5cc8, 2);
-        light2.position.set(-5, -3, 4);
-        scene.add(light2);
+        // Несколько зеркал одной и той же текстуры
+        const textureUrls = [
+            'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r160/examples/textures/planets/earth_atmos_2048.jpg',
+            'https://threejs.org/examples/textures/planets/earth_atmos_2048.jpg',
+            'https://raw.githubusercontent.com/mrdoob/three.js/r160/examples/textures/planets/earth_atmos_2048.jpg'
+        ];
 
-        // Сфера
-        const geometry = new THREE.SphereGeometry(1.3, 64, 64);
-        const material = new THREE.MeshStandardMaterial({
-            color: 0x1a1440,
-            metalness: 0.7,
-            roughness: 0.25,
-            emissive: 0x3d2a6b,
-            emissiveIntensity: 0.4
-        });
-        const sphere = new THREE.Mesh(geometry, material);
-        scene.add(sphere);
+        let urlIndex = 0;
 
-        // Каркас поверх сферы
-        const wireframe = new THREE.Mesh(
-            new THREE.SphereGeometry(1.305, 32, 32),
-            new THREE.MeshBasicMaterial({
-                color: 0x8a5cff,
-                wireframe: true,
-                transparent: true,
-                opacity: 0.25
-            })
-        );
-        scene.add(wireframe);
+        function tryLoadTexture() {
+            if (urlIndex >= textureUrls.length) {
+                loaderEl.textContent = 'НЕ УДАЛОСЬ ЗАГРУЗИТЬ ТЕКСТУРУ';
+                return;
+            }
 
-        // Анимация
+            const url = textureUrls[urlIndex];
+            console.log('Пробуем загрузить:', url);
+
+            textureLoader.load(
+                url,
+                // onLoad
+                (texture) => {
+                    texture.colorSpace = THREE.SRGBColorSpace;
+                    texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+                    material.map = texture;
+                    material.needsUpdate = true;
+                    loaderEl.classList.add('hidden');
+                    console.log('Текстура загружена:', url);
+                },
+                // onProgress
+                undefined,
+                // onError
+                (err) => {
+                    console.warn('Не удалось загрузить', url, err);
+                    urlIndex++;
+                    tryLoadTexture();
+                }
+            );
+        }
+
+        tryLoadTexture();
+
+        // Анимация вращения
         const clock = new THREE.Clock();
-
         function animate() {
             requestAnimationFrame(animate);
             const t = clock.getElapsedTime();
-
-            sphere.rotation.y = t * 0.35;
-            sphere.rotation.x = t * 0.12;
-            wireframe.rotation.y = t * 0.35;
-            wireframe.rotation.x = t * 0.12;
-
+            earth.rotation.y = t * 0.15;
             renderer.render(scene, camera);
         }
         animate();
